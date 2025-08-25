@@ -35,7 +35,6 @@ const (
 )
 
 const DEFAULT_ALLOWED_PROOF_AGE = time.Minute * 5
-const DEFAULT_ALLOWED_TIME_WINDOW = time.Second * 0
 
 // ParseOptions and its contents are optional for the Parse function.
 type ParseOptions struct {
@@ -46,11 +45,8 @@ type ParseOptions struct {
 	// If set to true the authorization server has to validate the nonce timestamp itself.
 	NonceHasTimestamp bool
 
-	// The allowed clock-skew (into the future) on the `iat` of the proof. If not set proof is rejected if issued in the future.
+	// Accepted leeway to account for clock skew. Defaults to 5 minutes
 	TimeWindow *time.Duration
-
-	// The allowed age of a proof. If not set the default is 5 minutes.
-	AllowedProofAge *time.Duration
 
 	// dpop_jkt parameter that is optionally sent by the client to the authorization server on token request.
 	// If set the proof proof-of-possession public key needs to match or the proof is rejected.
@@ -73,7 +69,18 @@ func Parse(
 	// that it contains a public key, and that the signature verifies with the public key.
 	// This satisfies point 2, 5, 6 and 7 in https://datatracker.ietf.org/doc/html/rfc9449#section-4.3
 	claims := ProofTokenClaims{RegisteredClaims: &jwt.RegisteredClaims{}}
-	dpopToken, err := jwt.ParseWithClaims(tokenString, &claims, keyFunc)
+	var parserOptions []jwt.ParserOption
+	if opts.TimeWindow != nil {
+		parserOptions = append(parserOptions, jwt.WithLeeway(*opts.TimeWindow))
+	} else {
+		parserOptions = append(parserOptions, jwt.WithLeeway(DEFAULT_ALLOWED_PROOF_AGE))
+	}
+	if !opts.NonceHasTimestamp {
+		// Check that `iat` is within the acceptable window unless `nonce` contains a server managed timestamp.
+		// This satisfies point 11 in https://datatracker.ietf.org/doc/html/rfc9449#section-4.3
+		parserOptions = append(parserOptions, jwt.WithIssuedAt())
+	}
+	dpopToken, err := jwt.ParseWithClaims(tokenString, &claims, keyFunc, parserOptions...)
 	if err != nil {
 		return nil, errors.Join(ErrInvalidProof, err)
 	}
@@ -105,28 +112,6 @@ func Parse(
 	// This satisfies point 10 in https://datatracker.ietf.org/doc/html/rfc9449#section-4.3
 	if opts.Nonce != "" && opts.Nonce != claims.Nonce {
 		return nil, ErrIncorrectNonce
-	}
-
-	// Check that `iat` is within the acceptable window unless `nonce` contains a server managed timestamp.
-	// This satisfies point 11 in https://datatracker.ietf.org/doc/html/rfc9449#section-4.3
-	if !opts.NonceHasTimestamp {
-		// Check that `iat` is not too far into the past.
-		past := DEFAULT_ALLOWED_PROOF_AGE
-		if opts.AllowedProofAge != nil {
-			past = *opts.AllowedProofAge
-		}
-		if claims.IssuedAt.Before(time.Now().Add(-past)) {
-			return nil, errors.Join(ErrInvalidProof, ErrExpired)
-		}
-
-		// Check that `iat` is not too far into the future.
-		future := DEFAULT_ALLOWED_TIME_WINDOW
-		if opts.TimeWindow != nil {
-			future = *opts.TimeWindow
-		}
-		if claims.IssuedAt.After(time.Now().Add(future)) {
-			return nil, errors.Join(ErrInvalidProof, ErrFuture)
-		}
 	}
 
 	// Extract the public key from the proof and hash it.
