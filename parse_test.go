@@ -311,7 +311,10 @@ func TestParse_ExpiredProof(t *testing.T) {
     dpopProofString := createSignedDpopProofTokenString(dpopProofClaims, t)
 
     // Act
-    opts := dpop.ParseOptions{}
+    duration := 0 * time.Hour
+    opts := dpop.ParseOptions{
+        TimeWindow: &duration,
+    }
     proof, err := dpop.Parse(dpopProofString, dpop.POST, &httpUrl, opts)
 
     // Assert
@@ -1087,7 +1090,7 @@ func TestParse_ProofWithSkew(t *testing.T) {
         Time: time.Now().Add(1 * time.Minute),
     }
     dpopProofClaims.ExpiresAt = &jwt.NumericDate{
-        Time: time.Now().Add(2 * time.Minute),
+        Time: time.Now().Add(0 * time.Minute),
     }
 
     dpopProofString := createSignedDpopProofTokenString(dpopProofClaims, t)

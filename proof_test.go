@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net/url"
 	"testing"
-	"time"
 
 	"github.com/AxisCommunications/go-dpop"
 	"github.com/golang-jwt/jwt/v5"
@@ -98,10 +97,8 @@ func TestValidate_WithParsedProof(t *testing.T) {
 		Host:   "server.example.com",
 		Path:   "/token",
 	}
-	duration := time.Duration(438000) * time.Hour
 	opts := dpop.ParseOptions{
-		Nonce:           "",
-		AllowedProofAge: &duration,
+		Nonce: "",
 	}
 	proof, err := dpop.Parse(validProof, dpop.POST, &httpUrl, opts)
 	if err != nil {
